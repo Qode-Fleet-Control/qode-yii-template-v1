@@ -1,0 +1,84 @@
+# Build check — does this template still build and run the way the fleet runs it?
+#
+# No secrets, no registry: on every push to main and every pull request, GitHub's runner
+# does what a coordinator's private docker does. An HTTP app goes through bin/run
+# (fleet.conf's DOCKER_* commands → docker compose), must answer 200 on HEALTH_PATH (a TCP
+# accept when HEALTH_PATH is empty), survives bin/restart, and bin/stop leaves no container
+# behind. A job template (DOCKER_START_CMD empty) builds and its `docker compose run --rm
+# app` must exit 0. A `local` compose profile (a database the stack brings for work off the
+# fleet, where the fleet's own is not there) is started here, since the runner has none.
+#
+# Shipping an image is a different workflow: manual-deploy.yml ("CI (manual)"), which
+# pushes to Artifact Registry and needs the fleet's GCP secrets and Workload Identity
+# binding. This one only proves the template works.
+name: Build check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PORT: "18080"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read fleet.conf
+        id: conf
+        run: |
+          bash -c '. ./fleet.conf >/dev/null 2>&1
+            echo "health=${HEALTH_PATH:-}"
+            if [ -n "${DOCKER_START_CMD:-}" ] || case "${START_CMD:-}" in *"docker compose"*) true;; *) false;; esac
+            then echo "kind=http"; else echo "kind=job"; fi' >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+          if docker compose --profile local config --services 2>/dev/null | grep -qvx app \
+             && [ "$(docker compose config --services | wc -l)" -lt "$(docker compose --profile local config --services | wc -l)" ]; then
+            echo "COMPOSE_PROFILES=local" >> "$GITHUB_ENV"; echo "starting the local profile"
+          fi
+
+      - name: Job — build and run
+        if: steps.conf.outputs.kind == 'job'
+        run: |
+          docker compose build
+          docker compose run --rm app
+
+      - name: HTTP — bin/run, probe, bin/restart, probe, bin/stop
+        if: steps.conf.outputs.kind == 'http'
+        env:
+          HEALTH: ${{ steps.conf.outputs.health }}
+        run: |
+          probe() { # $1 = seconds to wait
+            for _ in $(seq 1 "$1"); do
+              if [ -z "$HEALTH" ]; then
+                (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null && { echo "tcp up on :$PORT"; return 0; }
+              else
+                c=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT$HEALTH" || true)
+                [ "$c" = 200 ] && { echo "200 on $HEALTH"; return 0; }
+              fi
+              sleep 1
+            done
+            echo "::error::not up on :$PORT${HEALTH} after $1s"; return 1
+          }
+          setsid bin/run > run.log 2>&1 &
+          probe 900 || { tail -100 run.log; exit 1; }
+          setsid bin/restart >> run.log 2>&1 &
+          sleep 3
+          probe 600 || { tail -100 run.log; exit 1; }
+          bin/stop
+          left=$(docker compose ps -aq | wc -l)
+          echo "containers left after bin/stop: $left"
+          [ "$left" = 0 ]
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          tail -200 run.log 2>/dev/null || true
+          docker compose logs --no-color --tail 200 || true

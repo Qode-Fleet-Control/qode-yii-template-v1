@@ -4,7 +4,7 @@
 # server in the foreground. This is what the repo-root ./run shim delegates to,
 # and what the fleet ultimately launches.
 #
-# The fleet force-syncs the workspace, injects PORT / BASE_PATH / DATABASE_URL,
+# The fleet force-syncs the workspace, injects PORT / DATABASE_URL,
 # launches this detached in its own process group, and health-checks the port.
 # Never start a dev server here — HMR chunks 404 behind the ingress.
 # fleet.conf's commands are written relative to the REPO ROOT, so run them from
