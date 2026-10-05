@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# run — fresh PRODUCTION deploy: install dependencies, build, then start the
+# server in the foreground. This is what the repo-root ./run shim delegates to,
+# and what the fleet ultimately launches.
+#
+# The fleet force-syncs the workspace, injects PORT / BASE_PATH / DATABASE_URL,
+# launches this detached in its own process group, and health-checks the port.
+# Never start a dev server here — HMR chunks 404 behind the ingress.
+# fleet.conf's commands are written relative to the REPO ROOT, so run them from
+# there — not from bin/, where this script lives. _common.sh resolves FLEET_ROOT
+# from its own location, so it is sourced by path before the cd.
+. "$(dirname "$0")/_common.sh"
+cd "$FLEET_ROOT"
+
+step install "$INSTALL_CMD"
+step build "$BUILD_CMD"
+exec_step start "$START_CMD"

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# reload — apply new configuration WITHOUT a rebuild.
+#
+# If fleet.conf defines RELOAD_CMD (e.g. signal the server for a hot config
+# reload, or `docker compose up -d --no-build`), that runs. Otherwise this falls
+# back to a no-build restart: stop + start (reuses existing build artifacts).
+# This is the fast path when only env / config changed, not code.
+# fleet.conf's commands are written relative to the REPO ROOT, so run them from
+# there — not from bin/, where this script lives. _common.sh resolves FLEET_ROOT
+# from its own location, so it is sourced by path before the cd.
+. "$(dirname "$0")/_common.sh"
+cd "$FLEET_ROOT"
+
+if [ -n "$RELOAD_CMD" ]; then
+  echo "fleet: [reload] $RELOAD_CMD"
+  eval "$RELOAD_CMD"
+else
+  echo "fleet: no RELOAD_CMD defined — doing a no-build restart (stop + start)."
+  stop_running
+  exec "$FLEET_ROOT/bin/start"
+fi

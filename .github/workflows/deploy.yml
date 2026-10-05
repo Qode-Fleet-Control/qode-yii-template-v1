@@ -1,0 +1,89 @@
+# Build this repo's Dockerfile and push it to GCP Artifact Registry, tagged per branch.
+#
+# Auth is Workload Identity Federation — GitHub mints an OIDC token for this workflow,
+# Google exchanges it for a short-lived impersonation of SERVICE_ACCOUNT. No JSON key
+# is ever stored in this repo. The exchange only works once the repo is bound in the
+# WIF pool; the fleet writes that binding when it provisions the project (and the
+# preflight panel's "Image build & push" area re-does it on demand).
+#
+# The four secrets below are set on the repo by the fleet at provisioning time:
+#   SERVICE_ACCOUNT             deploy SA to impersonate
+#   WORKLOAD_IDENTITY_PROVIDER  projects/<n>/locations/global/workloadIdentityPools/<p>/providers/<x>
+#   ARTIFACT_REGISTRY_REGION    registry HOST, e.g. asia-southeast1-docker.pkg.dev
+#   ARTIFACT_REGISTRY           <gcp-project>/<repository>
+#
+# No `environment:` here, unlike the hand-written workflows in the fleet's own repos.
+# Those keep their secrets on per-branch GitHub Environments; a provisioned project has
+# one trunk and its secrets live on the repo, so naming an environment would only make
+# GitHub auto-create an empty one and add a place for the values to disagree.
+name: Deploy (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    permissions:
+      id-token: write
+      contents: read
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: '>= 363.0.0'
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.ARTIFACT_REGISTRY_REGION }} --quiet
+
+      # The image name is derived from the repo, not hardcoded, so this file is
+      # identical in every project the fleet provisions and a rename cannot leave a
+      # workflow pushing under the old name.
+      #
+      # The version label is <YYYY.MM.DD>-<short sha>, built from the COMMIT's own date
+      # rather than the build's, so rebuilding the same commit tomorrow reproduces the
+      # same label. Fleet derives the identical string in collector/ci_image.derive_version
+      # for repos whose workflow predates this step — keep the two shapes in step.
+      - name: Derive the image name and version
+        id: img
+        run: |
+          echo "repo_name=${GITHUB_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+          echo "version=$(TZ=UTC git show -s --format=%cd --date=format-local:'%Y.%m.%d' "$GITHUB_SHA")-$(git rev-parse --short=7 "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+
+      # Tagged per BRANCH (…-<ref_name>:latest), which is the convention k8smgr's
+      # imageRepoTmpl and the dashboard's rollout both read. The ref you dispatch on
+      # therefore decides which tag gets refreshed.
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ARTIFACT_REGISTRY_REGION }}/${{ secrets.ARTIFACT_REGISTRY }}/${{ steps.img.outputs.repo_name }}-${{ github.ref_name }}:${{ github.sha }}
+            ${{ secrets.ARTIFACT_REGISTRY_REGION }}/${{ secrets.ARTIFACT_REGISTRY }}/${{ steps.img.outputs.repo_name }}-${{ github.ref_name }}:${{ steps.img.outputs.version }}
+            ${{ secrets.ARTIFACT_REGISTRY_REGION }}/${{ secrets.ARTIFACT_REGISTRY }}/${{ steps.img.outputs.repo_name }}-${{ github.ref_name }}:latest
+          build-args: |
+            BUILD_ID=${{ github.sha }}
+
+      # Two markers, read by collector/ci_poller from this job's log. The DIGEST is what
+      # Fleet pins and deploys — a version tag is mutable, and an approval of a mutable
+      # reference is not an approval. FLEET_VERSION only gives that digest a name a person
+      # can read; nothing pins to it. Kept on its own line, and free of any secret, so
+      # GitHub's log masking cannot turn the label into "***".
+      - name: Output fleet image ref
+        run: |
+          echo "FLEET_IMAGE=${{ secrets.ARTIFACT_REGISTRY_REGION }}/${{ secrets.ARTIFACT_REGISTRY }}/${{ steps.img.outputs.repo_name }}-${{ github.ref_name }}@${{ steps.push.outputs.digest }}"
+          echo "FLEET_VERSION=${{ steps.img.outputs.version }}"

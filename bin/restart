@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# restart — stop the running instance, then do a full run (install + build +
+# start). Use after a code or dependency change. For a no-build restart, use
+# `bin/stop && bin/start` instead.
+#
+# When the app is managed by the fleet, prefer the dashboard's "↻ restart app"
+# button; this script is the CLI equivalent for manual / standalone runs.
+# fleet.conf's commands are written relative to the REPO ROOT, so run them from
+# there — not from bin/, where this script lives. _common.sh resolves FLEET_ROOT
+# from its own location, so it is sourced by path before the cd.
+. "$(dirname "$0")/_common.sh"
+cd "$FLEET_ROOT"
+
+stop_running
+exec "$FLEET_ROOT/bin/run"

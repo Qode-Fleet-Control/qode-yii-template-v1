@@ -1,0 +1,23 @@
+# The workflow Fleet Control dispatches. Its NAME is the contract: the dashboard's
+# Run CI button, the CI panel on the workspace card and the board's CI peek all call
+# `gh workflow run manual-deploy.yml` (FLEET_CI_WORKFLOW, backend/shared/provision.py).
+# Rename the file and those buttons 404 with "no manual-deploy.yml on this ref".
+#
+# Deliberately a thin wrapper around the reusable deploy.yml rather than the build
+# itself: an `on: push` trigger can be added to a sibling workflow that calls the same
+# reusable job, so automatic and manual builds can never drift into two recipes.
+name: CI (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    permissions:
+      # OIDC: the token GitHub mints here is what Google exchanges for the deploy
+      # service account. Without `id-token: write` the auth step fails before it
+      # reaches GCP at all.
+      id-token: write
+      contents: read

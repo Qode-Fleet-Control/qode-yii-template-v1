@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#
+# start — run WITHOUT building. Start the server from the existing build
+# artifacts, skipping install + build. Use when the build is already current
+# and you only need the process back up (e.g. after a config-only change, or a
+# fast restart). For a full rebuild use bin/run or bin/restart.
+# fleet.conf's commands are written relative to the REPO ROOT, so run them from
+# there — not from bin/, where this script lives. _common.sh resolves FLEET_ROOT
+# from its own location, so it is sourced by path before the cd.
+. "$(dirname "$0")/_common.sh"
+cd "$FLEET_ROOT"
+
+exec_step start "$START_CMD"
