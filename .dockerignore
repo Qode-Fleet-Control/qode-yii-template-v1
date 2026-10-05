@@ -1,0 +1,12 @@
+.git
+.github
+.fleet
+.fleet-deploy.log
+vendor
+runtime/*
+web/assets/*
+tests/_output
+.vagrant
+vagrant
+.env
+*.log

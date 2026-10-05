@@ -1,0 +1,46 @@
+# compose.yaml — the app as a container: the fleet's docker runtime.
+#
+# The fleet runs every app as containers, in the coordinator's private docker (sysbox
+# docker-in-docker): fleet.conf's DOCKER_* commands run this — `docker compose build`, then
+# `docker compose up` in the FOREGROUND. Locally: `PORT=3000 bin/run`, or just
+# `docker compose up --build`.
+#
+# The coordinator forwards its $PORT to the ${PORT}:${PORT} published here, so the app URL,
+# the QA tester and the dashboard reach the container unchanged. The app must listen on
+# 0.0.0.0:$PORT inside the container.
+#
+# The workspace's shared services (Postgres, Redis, MinIO, Mailpit) are reachable from the
+# container under the SAME hostnames the fleet injects: on each run the fleet attaches them
+# to the private docker's network. The variables below are listed WITHOUT values, so compose
+# passes the fleet's own through as is (and leaves out any that are unset). This works on
+# compose's own network only, not a bare `docker run`.
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    environment:
+      PORT: ${PORT:-8080}
+      # the app's public hostname / origin
+      FLEET_APP_HOST:
+      FLEET_APP_URL:
+      # the workspace's shared services, from the fleet
+      DATABASE_URL:
+      PGHOST:
+      PGPORT:
+      PGUSER:
+      PGPASSWORD:
+      PGDATABASE:
+      REDIS_URL:
+      S3_ENDPOINT:
+      S3_BUCKET:
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+      AWS_REGION:
+      SMTP_HOST:
+      SMTP_PORT:
+      SMTP_URL:
+      # this app's own settings
+      YII_ENV:
+      YII_DEBUG:
+      COOKIE_VALIDATION_KEY:
