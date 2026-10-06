@@ -41,6 +41,6 @@ services:
       SMTP_PORT:
       SMTP_URL:
       # this app's own settings
-      YII_ENV:
-      YII_DEBUG:
+      YII_ENV: ${YII_ENV:-prod}
+      YII_DEBUG: ${YII_DEBUG:-false}
       COOKIE_VALIDATION_KEY:
