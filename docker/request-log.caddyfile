@@ -1,0 +1,22 @@
+# Request log, imported into the stock FrankenPHP site block (/etc/frankenphp/Caddyfile)
+# through CADDY_SERVER_EXTRA_DIRECTIVES, set in the Dockerfile.
+#
+# KEEP THIS: one log line per request (status + duration) is what the workspace Monitoring tab charts.
+# Caddy's JSON access log on stdout: one line per finished request (health checks included)
+# with top-level "status" and "duration" (seconds), plus the request method, uri and
+# User-Agent. The query string is cut from the uri and Cookie / Authorization / Referer
+# headers are dropped: never log them.
+log {
+	output stdout
+	format filter {
+		wrap json
+		fields {
+			request>uri regexp [?].*$ ""
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			request>headers>Proxy-Authorization delete
+			request>headers>Referer delete
+			resp_headers>Set-Cookie delete
+		}
+	}
+}

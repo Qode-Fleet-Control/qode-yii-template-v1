@@ -14,6 +14,11 @@ COPY . .
 RUN composer dump-autoload --optimize --no-dev --no-interaction \
  && useradd -r -u 10001 -d /app app \
  && mkdir -p runtime web/assets && chown -R app:app runtime web/assets /config/caddy /data/caddy
+# KEEP THIS: one log line per request (status + duration) is what the workspace Monitoring tab charts.
+# docker/request-log.caddyfile turns on Caddy's JSON access log on stdout; the stock Caddyfile
+# imports it into its site block through CADDY_SERVER_EXTRA_DIRECTIVES.
+COPY docker/request-log.caddyfile /etc/frankenphp/request-log.caddyfile
+ENV CADDY_SERVER_EXTRA_DIRECTIVES="import /etc/frankenphp/request-log.caddyfile"
 ARG BUILD_ID=""
 ENV PORT=8080 SERVER_ROOT=/app/web YII_ENV=prod YII_DEBUG=false BUILD_ID=$BUILD_ID
 USER app
