@@ -5,6 +5,10 @@ on:
   workflow_dispatch:
 jobs:
   scan:
+    # Only in the starter itself: a project made from it copies this file, but
+    # sonar-project.properties names the starter's project and the copy's token may
+    # not scan into it. Projects are scanned by Fleet Control's code-scan.yml.
+    if: github.repository == 'Qode-Fleet-Control/qode-yii-template-v1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
